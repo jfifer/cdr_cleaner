@@ -25,8 +25,10 @@ class Cleaner(object):
          self.conn.close()
       else:
          if self.operation == "removeEvents":
+            self.removeProc()
             self.removeEvents()
          elif self.operation == "addEvents":
+            self.addProc()
             self.addEvent()
          self.conn.close()
 
@@ -35,6 +37,57 @@ class Cleaner(object):
       self.cursor.execute(query)
       for (SCHEMA_NAME) in self.cursor:
          cleaner = Cleaner(self.username, self.password, self.operation, self.host, SCHEMA_NAME[0])
+
+   def addProc(self):
+      query = ("CREATE DEFINER=`root`@`localhost` PROCEDURE `clean_local_cdr`()"
+        " BEGIN"
+	" DECLARE v_intvl_date, v_now DATETIME;"
+        " SET v_now = (select current_timestamp());"
+        " SET v_intvl_date = (select date_sub(v_now, interval 2 month));"
+        " IF EXISTS ("
+   	   " select table_name"
+   	   " from information_schema.tables"
+   	      " where table_schema = (select schema())"
+   	      " and table_name = 'cdr'"
+   	" ) THEN"
+        " DROP TABLE IF EXISTS local_cdr;"
+        " CREATE TABLE local_cdr ("
+           " id int(11),"
+           " calldate datetime,"
+           " clid varchar(80),"
+           " src varchar(80),"
+           " dst varchar(80),"
+           " dcontext varchar(80),"
+           " channel varchar(80),"
+           " dstchannel varchar(80),"
+           " lastapp varchar(80),"
+           " lastdata varchar(80),"
+           " duration int(11),"
+           " billsec  int(11),"
+           " disposition varchar(45),"
+           " amaflags int(11),"
+           " accountcode varchar(20),"
+           " uniqueid varchar(32),"
+           " userfield varchar(255),"
+           " cd_accountcode varchar(255),"
+           " cd_branchId int(11),"
+           " cd_pathcount int(11),"
+           " KEY `calldate` (`calldate`)"
+         ") ENGINE = MYISAM"
+         " AS "
+         " SELECT *"
+           " FROM cdr" 
+          " WHERE calldate BETWEEN v_intvl_date AND v_now;"         
+	" END IF;"
+        " END")
+      try:
+         self.cursor.execute(query)
+      except mysql.connector.Error as err:
+         print("Query Error: {}".format(err))
+
+   def removeProc(self):
+      query = "DROP PROCEDURE IF EXISTS clean_local_cdr";
+      self.cursor.execute(query)
 
    def addEvent(self):
       query = "CREATE EVENT `clean_local_cdr` ON SCHEDULE EVERY 1 DAY STARTS '2017-01-31 02:00:00' ON COMPLETION PRESERVE ENABLE DO CALL clean_local_cdr()";
